@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { render } from "ink";
-import { App } from "./app.js";
-import { Config, absolute } from "./core.js";
+
+// React reads NODE_ENV when it loads, and the development build is several times slower.
+process.env.NODE_ENV ??= "production";
+const { createElement } = await import("react");
+const { render } = await import("ink");
+const { App } = await import("./app.js");
+const { Config, absolute } = await import("./core.js");
 
 const USAGE = `Usage: tui-skills [--root DIR]... [--project DIR] [--config-dir DIR]
 
@@ -37,7 +41,7 @@ if (values.help) {
   process.exit(0);
 }
 
-let config: Config;
+let config: InstanceType<typeof Config>;
 try {
   config = Config.load(values["config-dir"] ? absolute(values["config-dir"]) : undefined);
 } catch (exc) {
@@ -50,5 +54,8 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
   process.exit(1);
 }
 
-const app = render(<App config={config} project={values.project} />, { alternateScreen: true });
+// No JSX in this file: the JSX runtime import would load React before NODE_ENV is set.
+// Incremental rendering rewrites only changed lines instead of repainting the whole screen.
+const app = render(createElement(App, { config, project: values.project }),
+  { alternateScreen: true, incrementalRendering: true });
 await app.waitUntilExit();

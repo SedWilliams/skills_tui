@@ -42,6 +42,19 @@ describe("core", () => {
     expect((await discover(config))[0]).toHaveLength(3);
   });
 
+  it("lists a linked folder at its real path and reports progress", async () => {
+    const root = config.roots[0];
+    const real = path.join(root, "aa-real");
+    fs.mkdirSync(path.join(real, "linked"), { recursive: true });
+    fs.writeFileSync(path.join(real, "linked", "SKILL.md"), TEXT.replace("example", "linked"));
+    // The scan queue is last in, first out, so a plain walk would reach the skill through the link.
+    fs.symlinkSync(real, path.join(root, "zz-link"));
+    const seen: number[] = [];
+    const [found] = await discover(config, () => false, (skills) => seen.push(skills.length));
+    expect(found.map((s) => s.directory)).toEqual([skill.directory, path.join(real, "linked")]);
+    expect(seen.at(-1)).toBe(2);
+  });
+
   it("copies supporting files and never overwrites", () => {
     const store = new Store(config);
     const dest = store.install(skill, config.targets.Codex, "copy");

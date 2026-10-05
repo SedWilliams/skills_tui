@@ -9,7 +9,7 @@ import {
   type Hint,
 } from "./components.js";
 import {
-  AGENT_NAMES, Config, Store, absolute, discover, installationStatus, isSymlink, lexists, readSkill,
+  AGENT_NAMES, Config, Store, absolute, byNameThenPath, discover, installationStatus, isSymlink, lexists, readSkill,
   resolveLoose, skillFile, targetPaths, type Skill,
 } from "./core.js";
 import {
@@ -80,18 +80,34 @@ export function App({ config: initialConfig, project: initialProject = "", size 
   const [searchKey, setSearchKey] = useState(0);
   const [focus, setFocus] = useState<"list" | "search" | "project">("list");
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
-  const [previewTop, setPreviewTop] = useState(0);
+  // Keyed by directory so a new selection starts at the top without an extra render.
+  const [preview, setPreview] = useState({ directory: "", top: 0 });
   const [notice, setNotice] = useState<Message | null>(null);
   const [stack, setStack] = useState<{ id: number; screen: Screen }[]>([]);
   const nextId = useRef(0);
   const scanId = useRef(0);
   const listTop = useRef(0);
 
+  const hasSkills = useRef(false);
+  hasSkills.current = skills.length > 0;
+
   const rescan = useCallback((cfg: Config) => {
     const id = ++scanId.current;
     setScanning(true);
     setNotice(null);
-    void discover(cfg, () => scanId.current !== id).then(([found, errors]) => {
+    // With an empty list, show skills as they are found so search works during the first scan.
+    // A rescan keeps the current list until it finishes, so rows don't vanish and come back.
+    let timer: NodeJS.Timeout | undefined;
+    let partial: Skill[] = [];
+    const progress = hasSkills.current ? undefined : (found: Skill[]) => {
+      partial = found;
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        if (scanId.current === id) setSkills([...partial].sort(byNameThenPath));
+      }, 100);
+    };
+    void discover(cfg, () => scanId.current !== id, progress).then(([found, errors]) => {
+      clearTimeout(timer);
       if (scanId.current !== id) return;
       setSkills(found);
       setScanErrors(errors);
@@ -108,15 +124,17 @@ export function App({ config: initialConfig, project: initialProject = "", size 
     pop: () => setStack((s) => s.slice(0, -1)),
   }), []);
 
+  const searchText = useMemo(
+    () => skills.map((s) => `${s.name} ${s.description} ${s.directory}`.toLowerCase()), [skills]);
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
-    return skills.filter((s) => `${s.name} ${s.description} ${s.directory}`.toLowerCase().includes(q));
-  }, [skills, query]);
+    return q ? skills.filter((_, i) => searchText[i].includes(q)) : skills;
+  }, [skills, searchText, query]);
   const found = filtered.findIndex((s) => s.directory === selectedDir);
   const cursor = found === -1 ? 0 : found;
   const selected: Skill | undefined = filtered[cursor];
 
-  useEffect(() => setPreviewTop(0), [selected?.directory]);
+  const previewTop = preview.directory === selected?.directory ? preview.top : 0;
 
   // Layout
   const modal = stack.length > 0;
@@ -184,6 +202,8 @@ export function App({ config: initialConfig, project: initialProject = "", size 
   const bodyH = Math.max(1, workspaceH - 2 - (meta.length ? meta.length + 1 : 0));
   const maxTop = Math.max(0, bodyLines.length - bodyH);
   const top = Math.min(previewTop, maxTop);
+  const scrollPreview = (delta: number) => setPreview({ directory: selected?.directory ?? "",
+    top: Math.max(0, Math.min(maxTop, top + delta)) });
 
   // Actions
   const afterChange = (changed: boolean) => { if (changed) rescan(config); };
@@ -266,8 +286,8 @@ export function App({ config: initialConfig, project: initialProject = "", size 
     else if (key.downArrow || input === "j") move(1);
     else if (key.home || input === "g") moveTo(0);
     else if (key.end || input === "G") moveTo(filtered.length - 1);
-    else if (key.pageDown) setPreviewTop((t) => Math.min(maxTop, Math.min(t, maxTop) + Math.max(1, bodyH - 1)));
-    else if (key.pageUp) setPreviewTop((t) => Math.max(0, Math.min(t, maxTop) - Math.max(1, bodyH - 1)));
+    else if (key.pageDown) scrollPreview(Math.max(1, bodyH - 1));
+    else if (key.pageUp) scrollPreview(-Math.max(1, bodyH - 1));
     else if (input === "/" || ctrl("f") || key.tab) setFocus("search");
     else if (input === "p") setFocus("project");
     else if (key.escape && query) clearSearch();
@@ -284,12 +304,24 @@ export function App({ config: initialConfig, project: initialProject = "", size 
   }, { isActive: !modal });
 
   listTop.current = follow(listTop.current, cursor, listRows, filtered.length);
-  const nameW = Math.min(Math.floor(listInner * 0.45),
-    Math.max(4, ...filtered.map((s) => s.name.length + (s.error ? 2 : 0))));
+  const longestName = useMemo(
+    () => filtered.reduce((w, s) => Math.max(w, s.name.length + (s.error ? 2 : 0)), 4), [filtered]);
+  const nameW = Math.min(Math.floor(listInner * 0.45), longestName);
+  // Measuring and truncating text is slow, so each row's columns are kept until the widths change.
+  const rowCache = useMemo(() => new WeakMap<Skill, { name: string; description: string }>(), [nameW, listInner]);
+  const rowText = (skill: Skill) => {
+    let row = rowCache.get(skill);
+    if (!row) {
+      row = { name: pad((skill.error ? "! " : "") + skill.name, nameW),
+        description: truncate(skill.description.split(/\s+/).join(" "), Math.max(0, listInner - nameW - 2)) };
+      rowCache.set(skill, row);
+    }
+    return row;
+  };
   const count = filtered.length === skills.length ? `${skills.length}` : `${filtered.length} of ${skills.length}`;
   const warnings = scanErrors.length;
   const statusLine: Message = notice ?? (scanning
-    ? { text: "Scanning folders in the background…", tone: "info" }
+    ? { text: `Scanning folders in the background… ${skills.length} found so far`, tone: "info" }
     : { text: `${skills.length} skills found`
         + (warnings ? ` · ${warnings} scan warning${warnings === 1 ? "" : "s"}, press ? for details` : ""), tone: "info" });
 
@@ -328,8 +360,7 @@ export function App({ config: initialConfig, project: initialProject = "", size 
             ) : filtered.slice(listTop.current, listTop.current + listRows).map((skill, i) => {
               const index = listTop.current + i;
               const isCursor = index === cursor;
-              const name = pad((skill.error ? "! " : "") + skill.name, nameW);
-              const description = truncate(skill.description.split(/\s+/).join(" "), Math.max(0, listInner - nameW - 2));
+              const { name, description } = rowText(skill);
               if (isCursor) {
                 return (
                   <Text key={skill.directory} wrap="truncate" inverse={focus === "list"} bold color={focus === "list" ? undefined : ACCENT}>

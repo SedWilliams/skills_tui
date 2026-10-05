@@ -1,5 +1,5 @@
 import { Box, Text, useInput, usePaste, type Key } from "ink";
-import { useEffect, useReducer, useRef, type ReactNode } from "react";
+import { useReducer, useRef, useState, type ReactNode } from "react";
 import { follow, truncate, width as textWidth } from "./text.js";
 
 export const ACCENT = "cyan";
@@ -90,12 +90,18 @@ export function LineInput(props: {
   initial?: string; focused: boolean; placeholder?: string; width: number; onChange: (value: string) => void;
 }) {
   const { focused, placeholder = "", width } = props;
-  const [state, dispatch] = useReducer(lineReducer, props.initial ?? "", (v) => ({ value: v, cursor: v.length }));
-  const first = useRef(true);
-  useEffect(() => {
-    if (first.current) first.current = false;
-    else props.onChange(state.value);
-  }, [state.value]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [state, setState] = useState(() => ({ value: props.initial ?? "", cursor: (props.initial ?? "").length }));
+  // Report changes from the key handler, not an effect, so the parent's update lands in the
+  // same render as the keystroke. The ref keeps several keys in one input chunk in order.
+  const current = useRef(state);
+  const dispatch = (action: LineAction) => {
+    const next = lineReducer(current.current, action);
+    if (next === current.current) return;
+    const changed = next.value !== current.current.value;
+    current.current = next;
+    setState(next);
+    if (changed) props.onChange(next.value);
+  };
 
   useInput((input, key) => {
     if (key.leftArrow) dispatch({ type: "move", to: (s) => s.cursor - 1 });

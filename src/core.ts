@@ -184,10 +184,10 @@ export function metadata(text: string): Record<string, unknown> & { name: string
   return data as Record<string, unknown> & { name: string; description: string };
 }
 
-export function readSkill(directory: string): Skill {
+function parseSkill(directory: string, read: () => string): Skill {
   let text = "";
   try {
-    text = fs.readFileSync(path.join(directory, "SKILL.md"), "utf-8");
+    text = read();
     const data = metadata(text);
     return { directory, name: data.name, description: data.description, text, error: "" };
   } catch (exc) {
@@ -196,44 +196,105 @@ export function readSkill(directory: string): Skill {
   }
 }
 
-const byNameThenPath = (a: Skill, b: Skill) => {
+export function readSkill(directory: string): Skill {
+  return parseSkill(directory, () => fs.readFileSync(path.join(directory, "SKILL.md"), "utf-8"));
+}
+
+async function readSkillAsync(directory: string): Promise<Skill> {
+  let text: string;
+  try {
+    text = await fsp.readFile(path.join(directory, "SKILL.md"), "utf-8");
+  } catch (exc) {
+    return parseSkill(directory, () => { throw exc; });
+  }
+  return parseSkill(directory, () => text);
+}
+
+export const byNameThenPath = (a: Skill, b: Skill) => {
   const [x, y] = [a.name.toLowerCase(), b.name.toLowerCase()];
   if (x !== y) return x < y ? -1 : 1;
   return a.directory < b.directory ? -1 : a.directory > b.directory ? 1 : 0;
 };
 
+/** Directories read at once. Sequential awaits leave the disk and thread pool mostly idle. */
+const SCAN_CONCURRENCY = 32;
+
+/**
+ * Find every directory containing SKILL.md under the configured roots.
+ * `progress` receives the skills found so far, unsorted, as the scan goes.
+ */
 export async function discover(
-  config: Config, cancelled: () => boolean = () => false,
+  config: Config, cancelled: () => boolean = () => false, progress?: (skills: Skill[]) => void,
 ): Promise<[Skill[], string[]]> {
   const skills: Skill[] = [];
   const errors: string[] = [];
   const visited = new Set<string>();
   const trash = resolveLoose(path.join(config.home, "trash"));
   const backups = resolveLoose(path.join(config.home, "backups"));
-  for (let root of config.scanRoots()) {
-    if (!fs.existsSync(root)) continue;
-    if (isFile(root)) root = path.dirname(root);
-    const stack = [root];
-    while (stack.length && !cancelled()) {
-      const directory = stack.pop()!;
-      try {
-        const resolved = await fsp.realpath(directory);
-        if (visited.has(resolved) || resolved === trash || resolved === backups) continue;
-        visited.add(resolved);
-        if (isFile(path.join(directory, "SKILL.md"))) {
-          skills.push(readSkill(directory));
-          // Assets and references are part of this skill, not scan roots.
-          continue;
-        }
-        for (const entry of await fsp.readdir(directory, { withFileTypes: true })) {
-          const child = path.join(directory, entry.name);
-          if (!(entry.isDirectory() || (entry.isSymbolicLink() && isDir(child)))) continue;
-          if (config.excludes.some((rule) => entry.name === rule || child.endsWith("/" + rule))) continue;
-          stack.push(child);
-        }
-      } catch (exc) {
-        if (errors.length < 100) errors.push(`${directory}: ${(exc as Error).message}`);
+  const fail = (directory: string, exc: unknown) => {
+    if (errors.length < 100) errors.push(`${directory}: ${(exc as Error).message}`);
+  };
+
+  // `real` is the resolved path. A plain subdirectory's real path is its parent's real path
+  // plus its name, so only roots and symlinks need a realpath call to detect cycles.
+  type Item = { directory: string; real: string };
+  const visit = async ({ directory, real }: Item, queue: Item[], links: Item[]) => {
+    if (visited.has(real) || real === trash || real === backups) return;
+    visited.add(real);
+    const entries = await fsp.readdir(directory, { withFileTypes: true });
+    const marker = entries.find((e) => e.name === "SKILL.md");
+    if (marker && (marker.isFile() || (marker.isSymbolicLink() && isFile(path.join(directory, marker.name))))) {
+      skills.push(await readSkillAsync(directory));
+      // Assets and references are part of this skill, not scan roots.
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      const child = path.join(directory, entry.name);
+      if (config.excludes.some((rule) => entry.name === rule || child.endsWith("/" + rule))) continue;
+      if (entry.isDirectory()) {
+        queue.push({ directory: child, real: path.join(real, entry.name) });
+        continue;
       }
+      try {
+        if (!(await fsp.stat(child)).isDirectory()) continue;
+        links.push({ directory: child, real: await fsp.realpath(child) });
+      } catch {
+        // Broken links are not directories.
+      }
+    }
+  };
+
+  // Roots run one after another so the library and agent targets claim their skills
+  // before a broader root such as the home directory reaches the same folders.
+  for (let root of config.scanRoots()) {
+    if (cancelled()) break;
+    try {
+      if (isFile(root)) root = path.dirname(root);
+      const queue: Item[] = [{ directory: root, real: await fsp.realpath(root) }];
+      // Linked directories wait until the regular tree is done, so a folder reachable both
+      // directly and through a link is listed at its real location.
+      const links: Item[] = [];
+      let active = 0;
+      await new Promise<void>((resolve) => {
+        const pump = () => {
+          if (!queue.length && !active) queue.push(...links.splice(0).reverse());
+          while (active < SCAN_CONCURRENCY && queue.length && !cancelled()) {
+            const item = queue.pop()!;
+            active++;
+            const found = skills.length;
+            void visit(item, queue, links).catch((exc) => fail(item.directory, exc)).finally(() => {
+              active--;
+              if (progress && skills.length !== found) progress(skills);
+              pump();
+            });
+          }
+          if (active === 0) resolve();
+        };
+        pump();
+      });
+    } catch (exc) {
+      if ((exc as NodeJS.ErrnoException).code !== "ENOENT") fail(root, exc);
     }
   }
   return [skills.sort(byNameThenPath), errors];
