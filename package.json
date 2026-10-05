@@ -1,0 +1,36 @@
+{
+  "name": "tui-skills",
+  "version": "0.2.0",
+  "description": "Find, edit, and install local coding-agent skills from your terminal",
+  "type": "module",
+  "bin": {
+    "tui-skills": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cli-truncate": "^6.1.1",
+    "ink": "^8.0.0",
+    "js-yaml": "^5.4.2",
+    "react": "^19.3.0",
+    "string-width": "^8.3.0",
+    "wrap-ansi": "^10.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "ink-testing-library": "^4.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
