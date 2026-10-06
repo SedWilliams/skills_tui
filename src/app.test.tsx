@@ -49,6 +49,35 @@ function start(size = { columns: 100, rows: 32 }) {
 }
 
 describe("app", () => {
+  it("combines type and text filters and clears them at 80x24", async () => {
+    new Store(config).create(TEXT.replace("name: example", "name: campaign").replace("description: A test skill", "description: A test skill\ntype: marketing"));
+    new Store(config).create(TEXT.replace("name: example", "name: brainstorm").replace("description: A test skill", "description: A test skill\ntype: bigpowers"));
+    new Store(config).create(TEXT.replace("name: example", "name: unslop"));
+    const { app, frame, press, waitFor } = start({ columns: 80, rows: 24 });
+    await waitFor("3 skills found");
+    await press("/", "campaign", KEY.tab);
+    await waitFor("change type");
+    await press(KEY.down); // AI unslop
+    await waitFor("No matching skills");
+    await press(KEY.down, KEY.down); // Marketing
+    await waitFor("Skills · 1 of 3");
+    expect(frame()).toContain("Type: marketing");
+    for (const line of frame().split("\n")) expect(line.length).toBeLessThanOrEqual(80);
+    expect(frame().split("\n").length).toBeLessThanOrEqual(24);
+    await press(KEY.enter, "r");
+    await waitFor("3 skills found");
+    expect(frame()).toContain("Type: marketing");
+    await press(KEY.escape);
+    await waitFor("Skills · 3");
+    expect(frame()).toContain("Type: All types");
+    await press("f", KEY.down, KEY.enter);
+    await waitFor("Skills · 1 of 3");
+    expect(frame()).toContain("Type: ai-unslop");
+    await press("f", KEY.escape);
+    await waitFor("Skills · 3");
+    app.unmount();
+  });
+
   it("searches, edits, applies, removes, and restores", async () => {
     const dir = new Store(config).create(TEXT);
     const { app, frame, press, waitFor } = start();

@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  AGENT_NAMES, Config, Skill, Store, discover, isSymlink, metadata, readSkill, skillFile, targetPaths,
+  AGENT_NAMES, Config, Skill, Store, discover, isSymlink, metadata, readSkill, skillFile, skillTypes, targetPaths,
 } from "./core.js";
 
 export const TEXT = "---\nname: example\ndescription: A test skill\n---\n\n# Instructions\n";
@@ -25,6 +25,28 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 describe("core", () => {
+  it("classifies collection paths and names without scanning instruction text", () => {
+    expect(skillTypes(skill)).toEqual(["other"]);
+    for (const [folder, expected] of [["marketing-skills", "marketing"], ["bigpowers", "bigpowers"], ["AI_unslop", "ai-unslop"]]) {
+      expect(skillTypes({ ...skill, directory: path.join(tmp, folder, "skills", "example") })).toEqual([expected]);
+    }
+    expect(skillTypes({ ...skill, name: "deslop" })).toEqual(["ai-unslop"]);
+    expect(skillTypes({ ...skill, text: "marketing bigpowers unslop" })).toEqual(["other"]);
+  });
+
+  it("reads custom types and tags from frontmatter, ignoring non-string values", () => {
+    fs.writeFileSync(skillFile(skill), TEXT.replace("description: A test skill", `description: A test skill
+type: Marketing
+category: Content Strategy
+tags: [marketing, 42, null]
+metadata:
+  type: AI unslop
+  tags: [Writing, false]`));
+    const typed = readSkill(skill.directory);
+    expect(typed.error).toBe("");
+    expect(skillTypes(typed)).toEqual(["ai-unslop", "content-strategy", "marketing", "writing"]);
+  });
+
   it("discovers hidden and invalid skills, honours exclusions, and skips cycles", async () => {
     const root = config.roots[0];
     const hidden = path.join(root, ".hidden", "bad");

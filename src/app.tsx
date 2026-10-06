@@ -10,7 +10,7 @@ import {
 } from "./components.js";
 import {
   AGENT_NAMES, Config, Store, absolute, byNameThenPath, discover, installationStatus, isSymlink, lexists, readSkill,
-  resolveLoose, skillFile, targetPaths, type Skill,
+  resolveLoose, skillFile, skillTypes, targetPaths, type Skill,
 } from "./core.js";
 import {
   body, follow, markdown, pad, short, truncate, width as textWidth, wrap, wrapPath, type Line,
@@ -78,7 +78,8 @@ export function App({ config: initialConfig, project: initialProject = "", size 
   const [scanning, setScanning] = useState(true);
   const [query, setQuery] = useState("");
   const [searchKey, setSearchKey] = useState(0);
-  const [focus, setFocus] = useState<"list" | "search" | "project">("list");
+  const [focus, setFocus] = useState<"list" | "search" | "types" | "project">("list");
+  const [typeFilter, setTypeFilter] = useState("");
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
   // Keyed by directory so a new selection starts at the top without an extra render.
   const [preview, setPreview] = useState({ directory: "", top: 0 });
@@ -126,10 +127,15 @@ export function App({ config: initialConfig, project: initialProject = "", size 
 
   const searchText = useMemo(
     () => skills.map((s) => `${s.name} ${s.description} ${s.directory}`.toLowerCase()), [skills]);
+  const typesBySkill = useMemo(() => skills.map(skillTypes), [skills]);
+  const types = useMemo(() => ["", ...new Set([...typesBySkill.flat(), ...(typeFilter ? [typeFilter] : [])])].sort(),
+    [typesBySkill, typeFilter]);
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
-    return q ? skills.filter((_, i) => searchText[i].includes(q)) : skills;
-  }, [skills, searchText, query]);
+    return skills.filter((_, i) => (!q || searchText[i].includes(q))
+      && (!typeFilter || typesBySkill[i].includes(typeFilter)));
+  }, [skills, searchText, query, typeFilter, typesBySkill]);
+  const cycleType = (delta: number) => setTypeFilter(types[(types.indexOf(typeFilter) + delta + types.length) % types.length]);
   const found = filtered.findIndex((s) => s.directory === selectedDir);
   const cursor = found === -1 ? 0 : found;
   const selected: Skill | undefined = filtered[cursor];
@@ -139,13 +145,15 @@ export function App({ config: initialConfig, project: initialProject = "", size 
   // Layout
   const modal = stack.length > 0;
   const groups: Hint[][] = focus === "search"
-    ? [[["Enter", "keep filter"], ["Esc", "clear"], ["↑↓", "select"], ["Tab", "project"]]]
+    ? [[["Enter", "keep filter"], ["Esc", "clear"], ["↑↓", "select"], ["Tab", "type"]]]
+    : focus === "types"
+      ? [[["←→", "change type"], ["Enter", "done"], ["Esc", "all types"], ["Tab", "project"]]]
     : focus === "project"
       ? [[["Enter", "done"], ["Tab", "back to list"], ["Ctrl+U", "clear"]]]
       : [[["a", "apply", !!selected], ["e", "edit", !!selected], ["n", "new"], ["x", "remove", !!selected]],
-         [["t", "trash"], ["s", "sources"], ["c", "settings"], ["r", "rescan"], ["?", "help"], ["q", "quit"]]];
+         [["f", "type"], ["t", "trash"], ["s", "sources"], ["c", "settings"], ["r", "rescan"], ["?", "help"], ["q", "quit"]]];
   const barRows = keyRows(groups, columns);
-  const workspaceH = Math.max(6, rows - 1 - 3 - barRows - 1);
+  const workspaceH = Math.max(6, rows - 1 - 3 - 1 - barRows - 1);
   const listW = Math.max(24, Math.floor(columns * 0.42));
   const previewW = columns - listW - 1;
   const projectW = Math.floor(columns * 0.4);
@@ -173,6 +181,7 @@ export function App({ config: initialConfig, project: initialProject = "", size 
       rest.forEach((r) => out.push({ text: " ".repeat(10) + r, color }));
     };
     rowsOf("Path", short(selected.directory), undefined, true);
+    rowsOf("Type", skillTypes(selected).join(", "));
     rowsOf("Installed", status);
     if (isSymlink(selected.directory)) rowsOf("Links to", short(resolveLoose(selected.directory)), undefined, true);
     if (selected.error) rowsOf("Problem", selected.error, "red");
@@ -275,7 +284,11 @@ export function App({ config: initialConfig, project: initialProject = "", size 
 
   useInput((input, key) => {
     if (focus !== "list") {
-      if (key.tab) setFocus(focus === "search" ? "project" : "list");
+      if (key.tab) setFocus(focus === "search" ? "types" : focus === "types" ? "project" : "list");
+      else if (focus === "types" && key.escape) { setTypeFilter(""); setFocus("list"); }
+      else if (focus === "types" && (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow)) {
+        cycleType(key.leftArrow || key.upArrow ? -1 : 1);
+      }
       else if (focus === "search" && key.escape) { clearSearch(); setFocus("list"); }
       else if (key.return || key.escape) setFocus("list");
       else if (focus === "search" && (key.upArrow || key.downArrow)) move(key.upArrow ? -1 : 1);
@@ -290,7 +303,8 @@ export function App({ config: initialConfig, project: initialProject = "", size 
     else if (key.pageUp) scrollPreview(-Math.max(1, bodyH - 1));
     else if (input === "/" || ctrl("f") || key.tab) setFocus("search");
     else if (input === "p") setFocus("project");
-    else if (key.escape && query) clearSearch();
+    else if (input === "f") setFocus("types");
+    else if (key.escape && (query || typeFilter)) { clearSearch(); setTypeFilter(""); }
     else if (key.return || input === "a" || ctrl("a")) actions.apply();
     else if (input === "e" || ctrl("e")) actions.edit();
     else if (input === "n" || ctrl("n")) actions.new();
@@ -353,6 +367,9 @@ export function App({ config: initialConfig, project: initialProject = "", size 
               placeholder="Blank for user-wide targets" onChange={setProject} />
           </Panel>
         </Box>
+        <Text wrap="truncate" color={focus === "types" ? ACCENT : MUTED} bold={focus === "types"}>
+          {` Type: ${typeFilter || "All types"}  · f to filter${focus === "types" ? " · ← → to change" : ""}`}
+        </Text>
         <Box flexDirection="row" gap={1} height={workspaceH}>
           <Panel title={`Skills · ${count}`} width={listW} height={workspaceH} focused={focus === "list"}>
             {filtered.length === 0 ? (
@@ -717,6 +734,8 @@ function helpText(config: Config, scanErrors: string[]): string {
 
 - ↑↓ or j/k select a skill. g and G jump to the first and last. PgUp and PgDn scroll the preview.
 - / searches names, descriptions, and paths. Enter keeps the filter. Esc clears it.
+- f filters by type. Arrow keys choose, Enter keeps, Esc resets. Tab from search also opens it.
+- Type and text filters combine. Esc in the list clears both. Custom types come from frontmatter type, category, or tags.
 - p sets a project directory for project-local targets. Blank means user-wide targets.
 - Enter or a opens Apply, which copies or links the whole skill folder into the agents you select.
 - e edits SKILL.md and saves a backup first. n creates a skill in your library.

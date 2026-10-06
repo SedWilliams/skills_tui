@@ -28,6 +28,7 @@ The left pane lists skills. The right pane shows the selected skill's location, 
 | ↑ ↓ / j k | Select a skill. g and G jump to the first and last |
 | PgUp PgDn | Scroll the preview |
 | / | Filter names, descriptions, and paths. Enter keeps the filter, Esc clears it |
+| f | Filter by skill type. Use arrow keys to choose, Enter to keep, Esc for all types |
 | p | Set a project directory for project-local targets. Blank means user-wide |
 | Enter / a | Apply: choose agents and copy or link the complete skill folder |
 | e | Edit the selected skill |
@@ -39,6 +40,10 @@ The left pane lists skills. The right pane shows the selected skill's location, 
 | r | Rescan in the background |
 | ? | Help, including scan warnings |
 | q | Quit |
+
+Text search and type filters work together. While searching, press Tab to focus the type filter. Esc from the skill list clears both filters. Types are detected from folder paths and skill names for `marketing`, `bigpowers`, and `ai-unslop`, including `deslop`. Unclassified skills appear under `other`.
+
+For custom types, add `type: marketing`, `category: writing`, or `tags: [marketing, writing]` to a skill's YAML frontmatter. These fields also work inside a `metadata` mapping. A skill can match multiple types. Type names are lowercase, with spaces and underscores converted to hyphens. Filters last for the current session.
 
 The editor supports Ctrl+S to save, Esc to cancel (it asks before discarding changes), and Ctrl+Z to undo. Ctrl+G opens the text in `$VISUAL` or `$EDITOR` and loads the result back when you exit.
 

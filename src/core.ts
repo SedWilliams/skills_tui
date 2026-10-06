@@ -154,6 +154,20 @@ export interface Skill {
   description: string;
   text: string;
   error: string;
+  types?: string[];
+}
+
+export function skillTypes(skill: Skill): string[] {
+  const types = new Set((skill.types ?? []).map(normalizeType).filter(Boolean));
+  const source = `${skill.directory} ${skill.name}`.toLowerCase();
+  if (/marketing/.test(source)) types.add("marketing");
+  if (/bigpowers/.test(source)) types.add("bigpowers");
+  if (/unslop|deslop/.test(source)) types.add("ai-unslop");
+  return types.size ? [...types].sort() : ["other"];
+}
+
+function normalizeType(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s_]+/g, "-");
 }
 
 export const skillFile = (skill: Skill) => path.join(skill.directory, "SKILL.md");
@@ -189,7 +203,12 @@ function parseSkill(directory: string, read: () => string): Skill {
   try {
     text = read();
     const data = metadata(text);
-    return { directory, name: data.name, description: data.description, text, error: "" };
+    const nested = data.metadata && typeof data.metadata === "object"
+      ? data.metadata as Record<string, unknown> : {};
+    const types = [data.type, data.category, data.tags, nested.type, nested.category, nested.tags]
+      .flatMap((value) => Array.isArray(value) ? value : [value])
+      .filter((value): value is string => typeof value === "string");
+    return { directory, name: data.name, description: data.description, text, error: "", types };
   } catch (exc) {
     return { directory, name: path.basename(directory), description: "Invalid skill", text,
       error: (exc as Error).message };
