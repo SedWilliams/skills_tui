@@ -1,15 +1,44 @@
+<div align="center">
+
+<img src="docs/assets/social-card.png" alt="Skills cabinet. Find every SKILL.md on your machine. Install it for all your agents at once." width="820">
+
 # Skills cabinet
 
-Find local `SKILL.md` files, edit them in your terminal, and install them for Codex, Claude Code, Antigravity, or Pi. The app is written in TypeScript with Ink. You don't need API keys or a running agent.
+**Find, fix, and install the agent skills scattered across your disk.**
 
-## Run
+[![License: MIT](https://img.shields.io/badge/license-MIT-5ccfe6.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A5%2020-8fd69f.svg)](https://nodejs.org)
+[![API keys](https://img.shields.io/badge/API%20keys-none-e8c27a.svg)](#quick-start)
+
+</div>
+
+Codex, Claude Code, Antigravity, and Pi each read skills from their own folders. Skills pile up in all of them, in cloned skill packs, and in Downloads. Skills cabinet scans your disk for every `SKILL.md`, shows which agents already have each skill, and flags broken frontmatter. Pick a skill and some agents, and it copies or links the folder into each agent's skills directory. Editing a skill backs up the original first.
+
+The app is written in TypeScript with Ink. You don't need API keys or a running agent.
+
+![Searching skills, filtering by type, installing seo-audit for Codex and Claude Code, then editing its SKILL.md](docs/assets/demo.gif)
+
+## Quick start
+
+You need Node.js 20 or newer.
 
 ```sh
-cd /Users/shedrick/Desktop/dev/tui_skills
+git clone https://github.com/SedWilliams/skills_tui.git
+cd skills_tui
 ./run.sh
 ```
 
-The launcher installs dependencies and builds the app on first use, and rebuilds after source changes. Node.js 20 or newer is required. The layout fits terminals down to 80×24. Colors follow your terminal theme.
+The launcher installs dependencies and builds the app on first use, and rebuilds after source changes. The layout fits terminals down to 80×24. Colors follow your terminal theme.
+
+To run `tui-skills` from any directory, build and link it once. Run `npm run build` again after you pull changes.
+
+```sh
+npm install
+npm run build
+npm link
+```
+
+The launcher and `tui-skills` take the same flags:
 
 ```sh
 ./run.sh --root ~/Desktop/dev --root /Volumes/Projects
@@ -103,6 +132,27 @@ npm install
 npm test            # vitest: core logic and headless UI sessions
 npm run typecheck
 npm run build       # compiles src/ to dist/
+npm run assets      # rebuilds the README images from the real app
 ```
 
 Tests use temporary directories and headless Ink sessions through `ink-testing-library`. They cover discovery, exclusions, malformed skills, copying assets, symlinks, overwrite protection, backups, trash restoration, and UI operations. They do not install skills into your real agents.
+
+`npm run assets` builds the app and drives it through a scripted session in a throwaway home directory full of demo skills. Headless Chrome renders each frame, and the script writes the social card and demo GIF at the top of this page to `docs/assets/`. Run it after you change a screen so the README matches the app. It needs Node 22, Google Chrome, and Python 3.
+
+```text
+src/cli.tsx          command-line flags and startup
+src/app.tsx          screens and key handling
+src/components.tsx   panels, the key bar, and the text editors
+src/core.ts          discovery, validation, installs, backups, and trash
+src/text.ts          display width, wrapping, and the Markdown preview
+marketing/tools/     README image capture, not part of the app
+docs/assets/         images this README shows
+```
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and the checks to run before a pull request.
+
+## License
+
+[MIT](LICENSE) © SedWilliams

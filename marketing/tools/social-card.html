@@ -1,0 +1,118 @@
+<!--
+  Source for docs/assets/social-card.png, the 1280x640 image GitHub shows when the repo
+  is linked from Slack, X, or anywhere else that unfurls a URL. render.mjs adds the fonts
+  and replaces the terminal comment below with a slice of the real Apply screen.
+  Colors follow the dark theme in terminal.mjs.
+-->
+<style>
+  body {
+    width: 1280px;
+    height: 640px;
+    box-sizing: border-box;
+    padding: 66px 76px 58px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background:
+      radial-gradient(1000px 520px at 84% 18%, rgba(92, 207, 230, 0.13), transparent 62%),
+      radial-gradient(760px 420px at 4% 100%, rgba(199, 155, 242, 0.1), transparent 60%),
+      #0b0e11;
+    color: #d9dfe5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .hero {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 40px;
+  }
+
+  .eyebrow {
+    font: 500 18px JBM;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #5ccfe6;
+  }
+
+  h1 {
+    margin: 20px 0 0;
+    font: 800 90px/1 Archivo;
+    letter-spacing: -0.035em;
+    color: #f1f4f7;
+  }
+
+  .tagline {
+    margin: 26px 0 0;
+    font: 400 29px/1.38 Archivo;
+    color: #8d98a3;
+  }
+
+  .tagline b {
+    font-weight: 600;
+    color: #f1f4f7;
+  }
+
+  .win {
+    flex-shrink: 0;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  }
+
+  .win .screen {
+    padding: 22px 26px 24px;
+  }
+
+  /* The slice is 28 columns by 5 rows of 9x19 px cells, drawn at 1.75x. */
+  .win .term {
+    width: 441px;
+    height: auto;
+  }
+
+  footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 26px;
+    border-top: 1px solid #262d34;
+    font: 500 20px JBM;
+    color: #6c7781;
+  }
+
+  /* The app's key bar: bold cyan keys, gray labels. */
+  .keys {
+    display: flex;
+    gap: 28px;
+  }
+
+  .keys b {
+    margin-right: 9px;
+    color: #5ccfe6;
+  }
+
+  .repo {
+    color: #5ccfe6;
+  }
+</style>
+
+<div class="hero">
+  <div>
+    <div class="eyebrow">Agent skills in your terminal</div>
+    <h1>Skills cabinet</h1>
+    <p class="tagline">Find every SKILL.md on your machine.<br />Install it for <b>all your agents</b> at once.</p>
+  </div>
+  <div class="win">
+    <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="title">tui-skills</span></div>
+    <div class="screen"><!-- terminal --></div>
+  </div>
+</div>
+
+<footer>
+  <div class="keys">
+    <span><b>/</b>search</span>
+    <span><b>f</b>type</span>
+    <span><b>a</b>apply</span>
+    <span><b>e</b>edit</span>
+  </div>
+  <div class="repo">github.com/SedWilliams/skills_tui</div>
+</footer>

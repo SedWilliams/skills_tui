@@ -2,6 +2,28 @@
   "name": "tui-skills",
   "version": "0.2.0",
   "description": "Find, edit, and install local coding-agent skills from your terminal",
+  "keywords": [
+    "agent-skills",
+    "skills",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "pi",
+    "tui",
+    "terminal",
+    "ink",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "SedWilliams",
+  "homepage": "https://github.com/SedWilliams/skills_tui#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SedWilliams/skills_tui.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SedWilliams/skills_tui/issues"
+  },
   "type": "module",
   "bin": {
     "tui-skills": "dist/cli.js"
@@ -16,7 +38,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/cli.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "assets": "node marketing/tools/assets.mjs"
   },
   "dependencies": {
     "cli-truncate": "^6.1.1",

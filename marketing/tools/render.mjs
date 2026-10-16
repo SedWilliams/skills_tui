@@ -91,18 +91,29 @@ for (const frame of stills) {
 
 // Snippets: a slice of a still without window chrome or background, for close-ups in thumbnails.
 // rows and cols are half-open [start, end) ranges of terminal cells.
+const crop = (still, [r0, r1], [c0, c1]) => {
+  const frame = stills.find((f) => f.name === still);
+  return parse(frame.ansi, frame.columns, frame.rows).slice(r0, r1).map((row) => row.slice(c0, c1));
+};
 const SNIPPETS = [
   { name: "apply-agents", still: "apply-all", rows: [9, 13], cols: [2, 32], theme: "dark", scale: 4 },
   { name: "list", still: "browse", rows: [5, 30], cols: [0, 46], theme: "dark", scale: 3 },
   { name: "list", still: "browse", rows: [5, 30], cols: [0, 46], theme: "light", scale: 3 },
 ];
-for (const { name, still, rows: [r0, r1], cols: [c0, c1], theme: themeName, scale } of SNIPPETS) {
-  const frame = stills.find((f) => f.name === still);
-  const grid = parse(frame.ansi, frame.columns, frame.rows).slice(r0, r1).map((row) => row.slice(c0, c1));
-  await shoot(page(THEMES[themeName], toSvg(grid, THEMES[themeName], METRICS)),
+for (const { name, still, rows, cols, theme: themeName, scale } of SNIPPETS) {
+  await shoot(page(THEMES[themeName], toSvg(crop(still, rows, cols), THEMES[themeName], METRICS)),
     path.join(outDir, "snippets", `${name}-${themeName}@${scale}x.png`),
-    { width: (c1 - c0) * METRICS.cell, height: (r1 - r0) * METRICS.line, scale, transparent: true });
+    { width: (cols[1] - cols[0]) * METRICS.cell, height: (rows[1] - rows[0]) * METRICS.line, scale, transparent: true });
 }
+
+// Social card: 2x GitHub's 1280x640 Open Graph size, framing the Agents block of the Apply screen.
+const agents = crop("apply-all", [8, 13], [2, 30]);
+if (!agents[0].map((c) => c.ch).join("").includes("Agents")) {
+  throw new Error("The Agents block moved on the Apply screen. Update the social card crop in render.mjs.");
+}
+const card = fs.readFileSync(path.join(here, "social-card.html"), "utf-8")
+  .replace("<!-- terminal -->", toSvg(agents, THEMES.dark, METRICS));
+await shoot(page(THEMES.dark, card), path.join(outDir, "social-card.png"), { width: 1280, height: 640, scale: 2 });
 
 // Demo frames. The GIF shows the key in the title bar; the 1080p video adds a large keycast below.
 const theme = THEMES.dark;
@@ -132,4 +143,4 @@ fs.writeFileSync(path.join(outDir, "demo", "manifest.json"), JSON.stringify(mani
 
 await browser.close();
 fs.rmSync(tmp, { recursive: true, force: true });
-console.log(`Rendered ${stills.length} stills and ${demo.frames.length} demo frames into ${outDir}`);
+console.log(`Rendered ${stills.length} stills, the social card, and ${demo.frames.length} demo frames into ${outDir}`);

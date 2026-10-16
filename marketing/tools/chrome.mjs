@@ -6,10 +6,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const CHROME = process.env.CHROME
-  ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME = process.env.CHROME ?? [
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium",
+].find((file) => fs.existsSync(file));
 
 export async function launch() {
+  if (!CHROME) throw new Error("Chrome not found. Set CHROME=/path/to/chrome");
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "skills-chrome-"));
   const proc = spawn(CHROME, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`,
     "--hide-scrollbars", "--no-first-run", "--no-default-browser-check", "--force-color-profile=srgb",
