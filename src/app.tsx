@@ -397,7 +397,7 @@ export function App({ config: initialConfig, project: initialProject = "", size 
             right={maxTop > 0 ? `${Math.round((top / maxTop) * 100)}%` : ""}>
             {meta.map((m, i) => (
               <Text key={`m${i}`} wrap="truncate" color={m.color} italic={m.italic}>
-                {m.color ? m.text : <><Text color={MUTED}>{m.text.slice(0, 10)}</Text>{m.text.slice(10)}</>}
+                {m.color || m.italic ? m.text : <><Text color={MUTED}>{m.text.slice(0, 10)}</Text>{m.text.slice(10)}</>}
               </Text>
             ))}
             {meta.length ? <Text color={MUTED}>{"─".repeat(Math.max(0, previewInner))}</Text> : null}
