@@ -154,20 +154,8 @@ export interface Skill {
   description: string;
   text: string;
   error: string;
-  types?: string[];
-}
-
-export function skillTypes(skill: Skill): string[] {
-  const types = new Set((skill.types ?? []).map(normalizeType).filter(Boolean));
-  const source = `${skill.directory} ${skill.name}`.toLowerCase();
-  if (/marketing/.test(source)) types.add("marketing");
-  if (/bigpowers/.test(source)) types.add("bigpowers");
-  if (/unslop|deslop/.test(source)) types.add("ai-unslop");
-  return types.size ? [...types].sort() : ["other"];
-}
-
-function normalizeType(value: string): string {
-  return value.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  /** Frontmatter type, category, and tags: lowercase, hyphenated, and sorted. */
+  tags: string[];
 }
 
 export const skillFile = (skill: Skill) => path.join(skill.directory, "SKILL.md");
@@ -205,13 +193,15 @@ function parseSkill(directory: string, read: () => string): Skill {
     const data = metadata(text);
     const nested = data.metadata && typeof data.metadata === "object"
       ? data.metadata as Record<string, unknown> : {};
-    const types = [data.type, data.category, data.tags, nested.type, nested.category, nested.tags]
+    const tags = [data.type, data.category, data.tags, nested.type, nested.category, nested.tags]
       .flatMap((value) => Array.isArray(value) ? value : [value])
-      .filter((value): value is string => typeof value === "string");
-    return { directory, name: data.name, description: data.description, text, error: "", types };
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim().toLowerCase().replace(/[\s_]+/g, "-"));
+    return { directory, name: data.name, description: data.description, text, error: "",
+      tags: [...new Set(tags.filter(Boolean))].sort() };
   } catch (exc) {
     return { directory, name: path.basename(directory), description: "Invalid skill", text,
-      error: (exc as Error).message };
+      error: (exc as Error).message, tags: [] };
   }
 }
 
@@ -335,6 +325,21 @@ export function installationStatus(skill: Skill, targets: Record<string, string>
     if (isFile(path.join(dest, "SKILL.md"))) installed.push(agent + (isSymlink(dest) ? " ↗" : ""));
   }
   return installed.join(", ") || "Not installed at selected targets";
+}
+
+/** Names of the skills installed in any of the target folders, by the same test as installationStatus. */
+export function installedNames(targets: Record<string, string>): Set<string> {
+  const names = new Set<string>();
+  for (const root of new Set(Object.values(targets))) {
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(root);
+    } catch {
+      // A target that doesn't exist yet has nothing installed.
+    }
+    for (const name of entries) if (isFile(path.join(root, name, "SKILL.md"))) names.add(name);
+  }
+  return names;
 }
 
 /** Move like shutil.move: rename, falling back to copy and delete across devices. */

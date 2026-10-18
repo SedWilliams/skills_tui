@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  AGENT_NAMES, Config, Skill, Store, discover, isSymlink, metadata, readSkill, skillFile, skillTypes, targetPaths,
+  AGENT_NAMES, Config, Skill, Store, discover, installedNames, isSymlink, metadata, readSkill, skillFile, targetPaths,
 } from "./core.js";
 
 export const TEXT = "---\nname: example\ndescription: A test skill\n---\n\n# Instructions\n";
@@ -25,16 +25,8 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 describe("core", () => {
-  it("classifies collection paths and names without scanning instruction text", () => {
-    expect(skillTypes(skill)).toEqual(["other"]);
-    for (const [folder, expected] of [["marketing-skills", "marketing"], ["bigpowers", "bigpowers"], ["AI_unslop", "ai-unslop"]]) {
-      expect(skillTypes({ ...skill, directory: path.join(tmp, folder, "skills", "example") })).toEqual([expected]);
-    }
-    expect(skillTypes({ ...skill, name: "deslop" })).toEqual(["ai-unslop"]);
-    expect(skillTypes({ ...skill, text: "marketing bigpowers unslop" })).toEqual(["other"]);
-  });
-
-  it("reads custom types and tags from frontmatter, ignoring non-string values", () => {
+  it("reads tags from frontmatter type, category, and tags, ignoring non-string values", () => {
+    expect(skill.tags).toEqual([]);
     fs.writeFileSync(skillFile(skill), TEXT.replace("description: A test skill", `description: A test skill
 type: Marketing
 category: Content Strategy
@@ -44,7 +36,15 @@ metadata:
   tags: [Writing, false]`));
     const typed = readSkill(skill.directory);
     expect(typed.error).toBe("");
-    expect(skillTypes(typed)).toEqual(["ai-unslop", "content-strategy", "marketing", "writing"]);
+    expect(typed.tags).toEqual(["ai-unslop", "content-strategy", "marketing", "writing"]);
+    fs.writeFileSync(skillFile(skill), "broken");
+    expect(readSkill(skill.directory).tags).toEqual([]);
+  });
+
+  it("lists the names installed in any target folder", () => {
+    new Store(config).install(skill, config.targets.Pi, "link");
+    fs.mkdirSync(path.join(config.targets.Codex, "not-a-skill"), { recursive: true });
+    expect([...installedNames(targetPaths(config))]).toEqual(["example"]);
   });
 
   it("discovers hidden and invalid skills, honours exclusions, and skips cycles", async () => {

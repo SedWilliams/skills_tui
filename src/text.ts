@@ -13,7 +13,7 @@ export interface Line {
 
 export const width = stringWidth;
 
-export function truncate(text: string, columns: number, position: "end" | "start" = "end"): string {
+export function truncate(text: string, columns: number, position: "end" | "start" | "middle" = "end"): string {
   return columns <= 0 ? "" : cliTruncate(text, columns, { position });
 }
 

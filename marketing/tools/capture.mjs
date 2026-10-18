@@ -54,7 +54,7 @@ function render(tree, columns, rows) {
 }
 
 const KEY = {
-  up: "\u001B[A", down: "\u001B[B", right: "\u001B[C", end: "\u001B[F",
+  up: "\u001B[A", down: "\u001B[B", end: "\u001B[F",
   enter: "\r", escape: "\u001B", space: " ", ctrlS: "\u0013",
 };
 const FOUND = `${SKILL_COUNT} skills found`;
@@ -117,9 +117,9 @@ const stills = [
     await s.press("/", ..."review");
     await s.waitFor("3 of");
   }),
-  await still("types", 110, 32, async (s) => {
-    await s.press("f", ...Array(8).fill(KEY.right));
-    await s.waitFor("Type: marketing");
+  await still("filter", 110, 32, async (s) => {
+    await s.press("f", ...Array(6).fill(KEY.down));
+    await s.waitFor("Filter: ~/Downloads/marketing-skills/skills");
   }),
   await still("invalid", 110, 32, (s) => s.select("meeting-notes")),
   await still("apply", 110, 32, async (s) => {
@@ -132,9 +132,9 @@ const stills = [
     await s.press("a", "A", KEY.enter);
     await s.waitFor("Pi: applied");
   }),
-  // With the type filter on, as in the demo, the two new copies stay out of the list.
+  // With the folder filter on, as in the demo, the two new copies stay out of the list.
   await still("installed", 110, 32, async (s) => {
-    await s.press("f", ...Array(8).fill(KEY.right), KEY.enter);
+    await s.press("f", ...Array(6).fill(KEY.down), KEY.enter);
     await s.select("seo-audit");
     await s.press("a", KEY.space, KEY.down, KEY.space, KEY.enter);
     await s.waitFor("Claude Code: applied");
@@ -176,9 +176,11 @@ async function demo() {
   await step("/", 600, "/  search");
   for (const [i, c] of [..."review"].entries()) await step(c, i === 5 ? 1600 : 120, "/  search");
   await step(KEY.escape, 900, "Esc  clear search");
-  await step("f", 650, "f  filter by type");
-  for (let i = 0; i < 8; i++) await step(KEY.right, i === 7 ? 1300 : 240, "→  next type");
+  await step("f", 650, "f  filter");
+  for (let i = 0; i < 6; i++) await step(KEY.down, i === 5 ? 1300 : 240, "↓  preview folder");
   await step(KEY.enter, 600, "Enter  keep filter");
+  await step("]", 1100, "]  next folder");
+  await step("[", 900, "[  previous folder");
   for (const ms of [380, 380, 1100]) await step("j", ms, "j  next skill");
   await step("a", 1500, "a  apply");
   await step(KEY.space, 650, "Space  toggle Codex");

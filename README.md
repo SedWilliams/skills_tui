@@ -16,7 +16,7 @@ Codex, Claude Code, Antigravity, and Pi each read skills from their own folders.
 
 The app is written in TypeScript with Ink. You don't need API keys or a running agent.
 
-![Searching skills, filtering by type, installing seo-audit for Codex and Claude Code, then editing its SKILL.md](docs/assets/demo.gif)
+![Searching skills, filtering by folder, installing seo-audit for Codex and Claude Code, then editing its SKILL.md](docs/assets/demo.gif)
 
 ## Quick start
 
@@ -56,8 +56,9 @@ The left pane lists skills. The right pane shows the selected skill's location, 
 | --- | --- |
 | ↑ ↓ / j k | Select a skill. g and G jump to the first and last |
 | PgUp PgDn | Scroll the preview |
-| / | Filter names, descriptions, and paths. Enter keeps the filter, Esc clears it |
-| f | Filter by skill type. Use arrow keys to choose, Enter to keep, Esc for all types |
+| / | Search names, descriptions, and paths. Enter keeps the search, Esc clears it |
+| f | Filter by folder, install status, or tag. See [Filtering](#filtering) |
+| [ ] | Step to the previous or next folder at the same level |
 | p | Set a project directory for project-local targets. Blank means user-wide |
 | Enter / a | Apply: choose agents and copy or link the complete skill folder |
 | e | Edit the selected skill |
@@ -70,13 +71,25 @@ The left pane lists skills. The right pane shows the selected skill's location, 
 | ? | Help, including scan warnings |
 | q | Quit |
 
-Text search and type filters work together. While searching, press Tab to focus the type filter. Esc from the skill list clears both filters. Types are detected from folder paths and skill names for `marketing`, `bigpowers`, and `ai-unslop`, including `deslop`. Unclassified skills appear under `other`.
-
-For custom types, add `type: marketing`, `category: writing`, or `tags: [marketing, writing]` to a skill's YAML frontmatter. These fields also work inside a `metadata` mapping. A skill can match multiple types. Type names are lowercase, with spaces and underscores converted to hyphens. Filters last for the current session.
-
 The editor supports Ctrl+S to save, Esc to cancel (it asks before discarding changes), and Ctrl+Z to undo. Ctrl+G opens the text in `$VISUAL` or `$EDITOR` and loads the result back when you exit.
 
 In Apply, use ↑ ↓ to move, Space to toggle an agent or the copy/link mode, A to toggle all agents, and Enter to apply. **x** uninstalls the selected agent copies or links. It lists the exact paths and asks for confirmation. When agents share a path, removing it affects both. The project field in Apply affects that operation only.
+
+## Filtering
+
+Press **f** to open the filter panel in place of the preview. It has three sections, and each row shows how many skills it would list:
+
+- **Folders** shows where your skills live as a tree. A folder that leads to only one other folder merges into it, so `~/.codex/.tmp/plugins/plugins` is one row instead of four. → and ← open and close folders, and * opens every folder below the highlighted one.
+- **Status** narrows to skills that are installed or not installed at the current targets, skills with invalid frontmatter, or skills that share a name with another skill.
+- **Tags** lists the `type`, `category`, and `tags` values from skill frontmatter.
+
+The skill list previews whichever row you highlight. Space selects the row and keeps the panel open, so you can combine a folder with a status or a tag. Enter selects the row and closes the panel. Esc closes the panel without selecting the highlighted row.
+
+To read a large collection in pieces, select one folder, go through its skills, then press **]** for the next folder at the same level or **[** for the previous one. Folders with no matching skills are skipped. When a level runs out, the next step goes past the parent folder.
+
+Search and filters combine. Each count reflects the search and the other filters, so with **Not installed** selected, the folder counts show where your uninstalled skills are. While searching, Tab opens the filter panel. Esc in the skill list clears the search and every filter. Filters last for the current session.
+
+To tag a skill, add `type: marketing`, `category: writing`, or `tags: [marketing, writing]` to its YAML frontmatter. These fields also work inside a `metadata` mapping. Tags are lowercase, with spaces and underscores converted to hyphens.
 
 ## Discovery
 
@@ -135,7 +148,7 @@ npm run build       # compiles src/ to dist/
 npm run assets      # rebuilds the README images from the real app
 ```
 
-Tests use temporary directories and headless Ink sessions through `ink-testing-library`. They cover discovery, exclusions, malformed skills, copying assets, symlinks, overwrite protection, backups, trash restoration, and UI operations. They do not install skills into your real agents.
+Tests use temporary directories and headless Ink sessions through `ink-testing-library`. They cover discovery, exclusions, malformed skills, filtering, copying assets, symlinks, overwrite protection, backups, trash restoration, and UI operations. They do not install skills into your real agents.
 
 `npm run assets` builds the app and drives it through a scripted session in a throwaway home directory full of demo skills. Headless Chrome renders each frame, and the script writes the social card and demo GIF at the top of this page to `docs/assets/`. Run it after you change a screen so the README matches the app. It needs Node 22, Google Chrome, and Python 3.
 
@@ -144,6 +157,7 @@ src/cli.tsx          command-line flags and startup
 src/app.tsx          screens and key handling
 src/components.tsx   panels, the key bar, and the text editors
 src/core.ts          discovery, validation, installs, backups, and trash
+src/filters.ts       the folder tree, filter counts, and folder steps
 src/text.ts          display width, wrapping, and the Markdown preview
 marketing/tools/     README image capture, not part of the app
 docs/assets/         images this README shows

@@ -9,9 +9,13 @@ import {
   type Hint,
 } from "./components.js";
 import {
-  AGENT_NAMES, Config, Store, absolute, byNameThenPath, discover, installationStatus, isSymlink, lexists, readSkill,
-  resolveLoose, skillFile, skillTypes, targetPaths, type Skill,
+  AGENT_NAMES, Config, Store, absolute, byNameThenPath, discover, installationStatus, installedNames, isSymlink, lexists,
+  readSkill, resolveLoose, skillFile, targetPaths, type Skill,
 } from "./core.js";
+import {
+  NO_FILTER, STATUSES, countFacets, filterRows, passes, skillFacets, stepFolder, type Facet, type Filter, type Folder,
+  type Row,
+} from "./filters.js";
 import {
   body, follow, markdown, pad, short, truncate, width as textWidth, wrap, wrapPath, type Line,
 } from "./text.js";
@@ -78,8 +82,11 @@ export function App({ config: initialConfig, project: initialProject = "", size 
   const [scanning, setScanning] = useState(true);
   const [query, setQuery] = useState("");
   const [searchKey, setSearchKey] = useState(0);
-  const [focus, setFocus] = useState<"list" | "search" | "types" | "project">("list");
-  const [typeFilter, setTypeFilter] = useState("");
+  const [focus, setFocus] = useState<"list" | "search" | "filter" | "project">("list");
+  const [filter, setFilter] = useState<Filter>(NO_FILTER);
+  // The filter panel's open folders and highlighted row. The list previews that row until it is selected.
+  const [expanded, setExpanded] = useState(() => new Set<string>());
+  const [highlight, setHighlight] = useState<{ facet: Facet; value: string }>({ facet: "folder", value: "" });
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
   // Keyed by directory so a new selection starts at the top without an extra render.
   const [preview, setPreview] = useState({ directory: "", top: 0 });
@@ -125,17 +132,26 @@ export function App({ config: initialConfig, project: initialProject = "", size 
     pop: () => setStack((s) => s.slice(0, -1)),
   }), []);
 
-  const searchText = useMemo(
-    () => skills.map((s) => `${s.name} ${s.description} ${s.directory}`.toLowerCase()), [skills]);
-  const typesBySkill = useMemo(() => skills.map(skillTypes), [skills]);
-  const types = useMemo(() => ["", ...new Set([...typesBySkill.flat(), ...(typeFilter ? [typeFilter] : [])])].sort(),
-    [typesBySkill, typeFilter]);
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return skills.filter((_, i) => (!q || searchText[i].includes(q))
-      && (!typeFilter || typesBySkill[i].includes(typeFilter)));
-  }, [skills, searchText, query, typeFilter, typesBySkill]);
-  const cycleType = (delta: number) => setTypeFilter(types[(types.indexOf(typeFilter) + delta + types.length) % types.length]);
+  const installed = useMemo(() => {
+    try {
+      return installedNames(targetPaths(config, project));
+    } catch {
+      return new Set<string>();
+    }
+    // skills and stack.length: re-check after rescans and dialogs that install or remove.
+  }, [config, project, skills, stack.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const facets = useMemo(() => skillFacets(skills, installed), [skills, installed]);
+  const search = query.toLowerCase();
+  const counts = useMemo(() => countFacets(facets.facts, filter, search), [facets, filter, search]);
+  const panelRows = useMemo(() => filterRows(facets, counts, filter, expanded), [facets, counts, filter, expanded]);
+  const highlighted = panelRows.findIndex((r) => r.facet === highlight.facet && r.value === highlight.value);
+  const rowIndex = highlighted !== -1 ? highlighted
+    : Math.max(1, panelRows.findIndex((r) => r.facet === "folder" && r.value === filter.folder));
+  const row = panelRows[rowIndex];
+  const shown: Filter = focus === "filter" && row.facet ? { ...filter, [row.facet]: row.value } : filter;
+  const filtered = useMemo(() => skills.filter((_, i) => passes(facets.facts[i], shown, search)),
+    [skills, facets, search, shown.folder, shown.status, shown.tag]); // eslint-disable-line react-hooks/exhaustive-deps
+  const filtering = Object.values(filter).some(Boolean);
   const found = filtered.findIndex((s) => s.directory === selectedDir);
   const cursor = found === -1 ? 0 : found;
   const selected: Skill | undefined = filtered[cursor];
@@ -145,13 +161,14 @@ export function App({ config: initialConfig, project: initialProject = "", size 
   // Layout
   const modal = stack.length > 0;
   const groups: Hint[][] = focus === "search"
-    ? [[["Enter", "keep filter"], ["Esc", "clear"], ["↑↓", "select"], ["Tab", "type"]]]
-    : focus === "types"
-      ? [[["←→", "change type"], ["Enter", "done"], ["Esc", "all types"], ["Tab", "project"]]]
+    ? [[["Enter", "keep search"], ["Esc", "clear"], ["↑↓", "select"], ["Tab", "filter"]]]
+    : focus === "filter"
+      ? [[["↑↓", "move"], ["←→", "fold"], ["*", "open all"], ["Space", "select"], ["Enter", "select and close"],
+          ["Esc", "close"]]]
     : focus === "project"
       ? [[["Enter", "done"], ["Tab", "back to list"], ["Ctrl+U", "clear"]]]
       : [[["a", "apply", !!selected], ["e", "edit", !!selected], ["n", "new"], ["x", "remove", !!selected]],
-         [["f", "type"], ["t", "trash"], ["s", "sources"], ["c", "settings"], ["r", "rescan"], ["?", "help"], ["q", "quit"]]];
+         [["f", "filter"], ["t", "trash"], ["s", "sources"], ["c", "settings"], ["r", "rescan"], ["?", "help"], ["q", "quit"]]];
   const barRows = keyRows(groups, columns);
   const workspaceH = Math.max(6, rows - 1 - 3 - 1 - barRows - 1);
   const listW = Math.max(24, Math.floor(columns * 0.42));
@@ -181,7 +198,7 @@ export function App({ config: initialConfig, project: initialProject = "", size 
       rest.forEach((r) => out.push({ text: " ".repeat(10) + r, color }));
     };
     rowsOf("Path", short(selected.directory), undefined, true);
-    rowsOf("Type", skillTypes(selected).join(", "));
+    if (selected.tags.length) rowsOf("Tags", selected.tags.join(", "));
     rowsOf("Installed", status);
     if (isSymlink(selected.directory)) rowsOf("Links to", short(resolveLoose(selected.directory)), undefined, true);
     if (selected.error) rowsOf("Problem", selected.error, "red");
@@ -222,6 +239,54 @@ export function App({ config: initialConfig, project: initialProject = "", size 
   });
   const moveTo = (index: number) => setSelectedDir(filtered[index]?.directory ?? null);
   const clearSearch = () => { setQuery(""); setSearchKey((k) => k + 1); };
+
+  const select = (r: Row) => {
+    if (r.facet) setFilter({ ...filter, [r.facet]: r.value });
+  };
+  const selectable = panelRows.flatMap((r, i) => (r.facet ? [i] : []));
+  const moveRow = (delta: number) => {
+    const target = rowIndex + delta;
+    const i = delta > 0 ? selectable.find((j) => j >= target) ?? selectable.at(-1)!
+      : selectable.findLast((j) => j <= target) ?? selectable[0];
+    setHighlight({ facet: panelRows[i].facet!, value: panelRows[i].value });
+  };
+  const setOpen = (folder: string, open: boolean) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (open) next.add(folder);
+    else next.delete(folder);
+    return next;
+  });
+  const openAll = (folders: Folder[]) => setExpanded((prev) => {
+    const next = new Set(prev);
+    const visit = (folder: Folder) => {
+      if (!folder.children.length) return;
+      next.add(folder.path);
+      folder.children.forEach(visit);
+    };
+    folders.forEach(visit);
+    return next;
+  });
+  // Highlight a folder and open the folders above it, so the filter panel shows where the list is.
+  const reveal = (folder: string) => {
+    setHighlight({ facet: "folder", value: folder });
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (let f = facets.folders.get(folder)?.parent; f; f = f.parent) next.add(f.path);
+      return next;
+    });
+  };
+  // Start on the current selection in the section used last, so opening the panel never changes the list.
+  const openFilter = () => {
+    if (highlight.facet === "folder") reveal(filter.folder);
+    else setHighlight({ facet: highlight.facet, value: filter[highlight.facet] });
+    setFocus("filter");
+  };
+  const stepTo = (delta: number) => {
+    const folder = stepFolder(facets, counts, filter.folder, delta);
+    if (folder === filter.folder) return;
+    setFilter({ ...filter, folder });
+    reveal(folder);
+  };
 
   const actions = {
     apply: () => selected && nav.push({ type: "apply", skill: selected }),
@@ -283,12 +348,30 @@ export function App({ config: initialConfig, project: initialProject = "", size 
   };
 
   useInput((input, key) => {
+    if (focus === "filter") {
+      const page = Math.max(1, workspaceH - 3);
+      if (key.tab) setFocus("project");
+      else if (key.escape || input === "f") setFocus("list");
+      else if (key.return) { select(row); setFocus("list"); }
+      else if (input === " ") select(row);
+      else if (key.upArrow || input === "k") moveRow(-1);
+      else if (key.downArrow || input === "j") moveRow(1);
+      else if (key.pageUp) moveRow(-page);
+      else if (key.pageDown) moveRow(page);
+      else if (key.home || input === "g") moveRow(-panelRows.length);
+      else if (key.end || input === "G") moveRow(panelRows.length);
+      else if ((key.rightArrow || input === "l") && row.folder?.children.length) {
+        if (row.open) moveRow(1);
+        else setOpen(row.value, true);
+      } else if (key.leftArrow || input === "h") {
+        if (row.open) setOpen(row.value, false);
+        else if (row.folder?.parent) setHighlight({ facet: "folder", value: row.folder.parent.path });
+      } else if (input === "*") openAll(row.folder ? [row.folder] : row.facet === "folder" ? facets.roots : []);
+      return;
+    }
     if (focus !== "list") {
-      if (key.tab) setFocus(focus === "search" ? "types" : focus === "types" ? "project" : "list");
-      else if (focus === "types" && key.escape) { setTypeFilter(""); setFocus("list"); }
-      else if (focus === "types" && (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow)) {
-        cycleType(key.leftArrow || key.upArrow ? -1 : 1);
-      }
+      if (key.tab && focus === "search") openFilter();
+      else if (key.tab) setFocus("list");
       else if (focus === "search" && key.escape) { clearSearch(); setFocus("list"); }
       else if (key.return || key.escape) setFocus("list");
       else if (focus === "search" && (key.upArrow || key.downArrow)) move(key.upArrow ? -1 : 1);
@@ -303,8 +386,9 @@ export function App({ config: initialConfig, project: initialProject = "", size 
     else if (key.pageUp) scrollPreview(-Math.max(1, bodyH - 1));
     else if (input === "/" || ctrl("f") || key.tab) setFocus("search");
     else if (input === "p") setFocus("project");
-    else if (input === "f") setFocus("types");
-    else if (key.escape && (query || typeFilter)) { clearSearch(); setTypeFilter(""); }
+    else if (input === "f") openFilter();
+    else if (input === "[" || input === "]") stepTo(input === "]" ? 1 : -1);
+    else if (key.escape && (query || filtering)) { clearSearch(); setFilter(NO_FILTER); }
     else if (key.return || input === "a" || ctrl("a")) actions.apply();
     else if (input === "e" || ctrl("e")) actions.edit();
     else if (input === "n" || ctrl("n")) actions.new();
@@ -333,6 +417,13 @@ export function App({ config: initialConfig, project: initialProject = "", size 
     return row;
   };
   const count = filtered.length === skills.length ? `${skills.length}` : `${filtered.length} of ${skills.length}`;
+  // A long folder path keeps its end, which names the collection.
+  const chosen = [STATUSES.find(([value]) => value === shown.status)?.[1], shown.tag && `tag ${shown.tag}`]
+    .filter(Boolean).join(" · ");
+  const filterHint = focus === "filter" ? "" : "  · f to filter · [ ] prev/next folder";
+  const folderW = columns - 1 - textWidth(` Filter: ${chosen ? ` · ${chosen}` : ""}${filterHint}`);
+  const scope = [shown.folder && truncate(short(shown.folder), Math.max(12, folderW), "start"), chosen]
+    .filter(Boolean).join(" · ");
   const warnings = scanErrors.length;
   const statusLine: Message = notice ?? (scanning
     ? { text: `Scanning folders in the background… ${skills.length} found so far`, tone: "info" }
@@ -367,8 +458,10 @@ export function App({ config: initialConfig, project: initialProject = "", size 
               placeholder="Blank for user-wide targets" onChange={setProject} />
           </Panel>
         </Box>
-        <Text wrap="truncate" color={focus === "types" ? ACCENT : MUTED} bold={focus === "types"}>
-          {` Type: ${typeFilter || "All types"}  · f to filter${focus === "types" ? " · ← → to change" : ""}`}
+        <Text wrap="truncate">
+          <Text color={MUTED}> Filter: </Text>
+          <Text color={scope ? ACCENT : MUTED} bold={focus === "filter"}>{scope || "all skills"}</Text>
+          <Text color={MUTED}>{filterHint}</Text>
         </Text>
         <Box flexDirection="row" gap={1} height={workspaceH}>
           <Panel title={`Skills · ${count}`} width={listW} height={workspaceH} focused={focus === "list"}>
@@ -393,16 +486,20 @@ export function App({ config: initialConfig, project: initialProject = "", size 
               );
             })}
           </Panel>
-          <Panel title={selected?.name ?? "Preview"} width={previewW} height={workspaceH}
-            right={maxTop > 0 ? `${Math.round((top / maxTop) * 100)}%` : ""}>
-            {meta.map((m, i) => (
-              <Text key={`m${i}`} wrap="truncate" color={m.color} italic={m.italic}>
-                {m.color || m.italic ? m.text : <><Text color={MUTED}>{m.text.slice(0, 10)}</Text>{m.text.slice(10)}</>}
-              </Text>
-            ))}
-            {meta.length ? <Text color={MUTED}>{"─".repeat(Math.max(0, previewInner))}</Text> : null}
-            {bodyLines.slice(top, top + bodyH).map((line, i) => <StyledLine key={`b${top + i}`} line={line} />)}
-          </Panel>
+          {focus === "filter" ? (
+            <FilterPanel rows={panelRows} cursor={rowIndex} filter={filter} width={previewW} height={workspaceH} />
+          ) : (
+            <Panel title={selected?.name ?? "Preview"} width={previewW} height={workspaceH}
+              right={maxTop > 0 ? `${Math.round((top / maxTop) * 100)}%` : ""}>
+              {meta.map((m, i) => (
+                <Text key={`m${i}`} wrap="truncate" color={m.color} italic={m.italic}>
+                  {m.color || m.italic ? m.text : <><Text color={MUTED}>{m.text.slice(0, 10)}</Text>{m.text.slice(10)}</>}
+                </Text>
+              ))}
+              {meta.length ? <Text color={MUTED}>{"─".repeat(Math.max(0, previewInner))}</Text> : null}
+              {bodyLines.slice(top, top + bodyH).map((line, i) => <StyledLine key={`b${top + i}`} line={line} />)}
+            </Panel>
+          )}
         </Box>
         <KeyBar groups={groups} width={columns} />
         <Text wrap="truncate" color={statusLine.tone === "info" ? MUTED : toneColor(statusLine.tone)}> {statusLine.text}</Text>
@@ -413,6 +510,42 @@ export function App({ config: initialConfig, project: initialProject = "", size 
         </Box>
       ))}
     </Box>
+  );
+}
+
+/** Folders, statuses, and tags with their skill counts. ● marks each selection. */
+function FilterPanel({ rows, cursor, filter, width, height }: {
+  rows: Row[]; cursor: number; filter: Filter; width: number; height: number;
+}) {
+  const top = useRef(0);
+  const inner = width - 4;
+  const visible = height - 2;
+  top.current = follow(top.current, cursor, visible, rows.length);
+  // Show a section's heading along with its first row.
+  if (top.current === cursor && cursor > 0 && !rows[cursor - 1].facet) top.current--;
+  const countW = Math.max(...rows.map((r) => String(r.count).length));
+  return (
+    <Panel title="Filter  f" width={width} height={height} focused>
+      {rows.slice(top.current, top.current + visible).map((row, i) => {
+        const index = top.current + i;
+        if (!row.facet) return <Text key={index} bold wrap="truncate">{row.label}</Text>;
+        const on = filter[row.facet] === row.value;
+        const twisty = !row.folder ? "" : !row.folder.children.length ? "  " : row.open ? "▾ " : "▸ ";
+        const indent = " " + "  ".repeat(row.depth);
+        const count = String(row.count).padStart(countW);
+        const labelW = Math.max(0, inner - 1 - textWidth(indent + twisty) - 1 - countW);
+        const label = pad(truncate(row.label, labelW, "middle"), labelW);
+        if (index === cursor) {
+          return <Text key={index} inverse bold wrap="truncate">{on ? "●" : " "}{indent}{twisty}{label} {count}</Text>;
+        }
+        return (
+          <Text key={index} wrap="truncate" dimColor={!row.count && !on}>
+            <Text color={ACCENT}>{on ? "●" : " "}</Text>{indent}<Text color={MUTED}>{twisty}</Text>
+            <Text color={on ? ACCENT : undefined}>{label}</Text><Text color={MUTED}> {count}</Text>
+          </Text>
+        );
+      })}
+    </Panel>
   );
 }
 
@@ -733,9 +866,10 @@ function helpText(config: Config, scanErrors: string[]): string {
 ## Keys
 
 - ↑↓ or j/k select a skill. g and G jump to the first and last. PgUp and PgDn scroll the preview.
-- / searches names, descriptions, and paths. Enter keeps the filter. Esc clears it.
-- f filters by type. Arrow keys choose, Enter keeps, Esc resets. Tab from search also opens it.
-- Type and text filters combine. Esc in the list clears both. Custom types come from frontmatter type, category, or tags.
+- / searches names, descriptions, and paths. Enter keeps the search. Esc clears it.
+- f opens the filter panel in place of the preview. It lists folders as a tree, install status, and frontmatter tags, each with skill counts. The list previews the highlighted row. Space selects it, Enter selects it and closes the panel, → and ← open and close folders, * opens every folder below the highlighted one, and Esc closes without selecting. Tab from search also opens it.
+- [ and ] step to the previous or next folder at the same level and skip empty ones. Select one collection's folder, read it, then press ] for the next.
+- Search and filters combine, and each count in the panel reflects the other filters. Esc in the list clears them all. Tags come from frontmatter type, category, or tags.
 - p sets a project directory for project-local targets. Blank means user-wide targets.
 - Enter or a opens Apply, which copies or links the whole skill folder into the agents you select.
 - e edits SKILL.md and saves a backup first. n creates a skill in your library.
